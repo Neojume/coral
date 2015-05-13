@@ -1,8 +1,5 @@
 package io.coral.actors.transform
 
-// scala
-
-import io.coral.actors.CoralActorFactory
 import io.coral.api.DefaultModule
 import scala.concurrent.duration._
 // akka
@@ -18,10 +15,10 @@ import org.json4s.jackson.JsonMethods._
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 
 class ThresholdActorSpec(_system: ActorSystem) extends TestKit(_system)
-  with ImplicitSender
-  with WordSpecLike
-  with Matchers
-  with BeforeAndAfterAll {
+with ImplicitSender
+with WordSpecLike
+with Matchers
+with BeforeAndAfterAll {
 
   implicit val timeout = Timeout(100.millis)
   def this() = this(ActorSystem("ThresholdActorSpec"))
@@ -29,46 +26,101 @@ class ThresholdActorSpec(_system: ActorSystem) extends TestKit(_system)
   override def afterAll() {
     TestKit.shutdownActorSystem(system)
   }
-  
+
   "A ThresholdActor" must {
-    val createJson = parse(
-      """{ "type": "threshold", "params":
-      |{ "key": "key1", "threshold": 10.5 } }"""
-      .stripMargin).asInstanceOf[JObject]
-    
     implicit val injector = new DefaultModule(system.settings.config)
 
-    // test invalid definition json as well !!!
-    val props = CoralActorFactory.getProps(createJson).get
-    val threshold = TestActorRef[ThresholdActor](props)
+    "Default to trigger when higher" in {
+      val constructor = parse(
+        """ {"type": "threshold", "params":
+            { "key": "key1", "threshold": 10.5 } } """.stripMargin).asInstanceOf[JObject]
+      val props = ThresholdActor(constructor).get
+      val threshold = TestActorRef[ThresholdActor](props)
 
-    // subscribe the testprobe for emitting
-    val probe = TestProbe()
-    threshold.underlyingActor.emitTargets += probe.ref
+      // Subscribe the testprobe for emitting
+      val probe = TestProbe()
+      threshold.underlyingActor.emitTargets += probe.ref
 
-    "Emit when equal to the threshold" in {
-      val json = parse("""{"key1": 10.5}""").asInstanceOf[JObject]
+      // Emit when higher than the threshold
+      val json = parse( """{"key1": 10.7}""").asInstanceOf[JObject]
       threshold ! json
-      probe.expectMsg(parse("""{"key1": 10.5, "thresholdReached": "key1"}"""))
-    }
-    
-    "Emit when higher than the threshold" in {
-      val json = parse("""{"key1": 10.7}""").asInstanceOf[JObject]
-      threshold ! json
-      probe.expectMsg(parse("""{"key1": 10.7, "thresholdReached": "key1"}"""))
+      probe.expectMsg(parse( """{"key1": 10.7, "thresholdReached": "key1"}"""))
+
     }
 
-    "Not emit when lower than the threshold" in {
-      val json = parse("""{"key1": 10.4}""").asInstanceOf[JObject]
+    "Not create a new actor with an improper definition" in {
+      val constructor = parse(
+        """{ "type": "threshold", "params" : { "key":
+          |"key1", "threshold": "someString" }}""".stripMargin).asInstanceOf[JObject]
+
+      intercept[IllegalArgumentException] {
+        val thresholdActor = ThresholdActor(constructor)
+        assert(thresholdActor == None)
+      }
+    }
+
+    "Properly trigger when set to 'higher'" in {
+      val constructor = parse(
+        """ {"type": "threshold", "params":
+            { "key": "key1", "threshold": 10.5, "triggerWhen": "higher" } } """.stripMargin).asInstanceOf[JObject]
+      val props = ThresholdActor(constructor).get
+      val threshold = TestActorRef[ThresholdActor](props)
+
+      // Subscribe the testprobe for emitting
+      val probe = TestProbe()
+      threshold.underlyingActor.emitTargets += probe.ref
+
+      // Emit when equal to the threshold
+      var json = parse( """{"key1": 10.5}""").asInstanceOf[JObject]
+      threshold ! json
+      probe.expectMsg(parse( """{"key1": 10.5, "thresholdReached": "key1"}"""))
+
+      // Emit when higher than the threshold
+      json = parse( """{"key1": 10.7}""").asInstanceOf[JObject]
+      threshold ! json
+      probe.expectMsg(parse( """{"key1": 10.7, "thresholdReached": "key1"}"""))
+
+      // Not emit when lower than the threshold
+      json = parse( """{"key1": 10.4}""").asInstanceOf[JObject]
+      threshold ! json
+      probe.expectNoMsg()
+
+      // Not emit when key is not present in triggering json
+      json = parse( """{"key2": 10.7}""").asInstanceOf[JObject]
       threshold ! json
       probe.expectNoMsg()
     }
 
-    "Not emit when key is not present in triggering json" in {
-      val json = parse("""{"key2": 10.7}""").asInstanceOf[JObject]
+    "Properly trigger when set to 'lower'" in {
+      val constructor = parse(
+        """ {"type": "threshold", "params":
+            { "key": "key1", "threshold": 10.5, "triggerWhen": "lower" } } """.stripMargin).asInstanceOf[JObject]
+      val props = ThresholdActor(constructor).get
+      val threshold = TestActorRef[ThresholdActor](props)
+
+      // Subscribe the testprobe for emitting
+      val probe = TestProbe()
+      threshold.underlyingActor.emitTargets += probe.ref
+
+      // Emit when equal to the threshold
+      var json = parse( """{"key1": 10.5}""").asInstanceOf[JObject]
+      threshold ! json
+      probe.expectMsg(parse( """{"key1": 10.5, "thresholdReached": "key1"}"""))
+
+      // Emit when lower than the threshold
+      json = parse( """{"key1": 10.4}""").asInstanceOf[JObject]
+      threshold ! json
+      probe.expectMsg(parse( """{"key1": 10.4, "thresholdReached": "key1"}"""))
+
+      // Not emit when higher than the threshold
+      json = parse( """{"key1": 10.7}""").asInstanceOf[JObject]
+      threshold ! json
+      probe.expectNoMsg()
+
+      // Not emit when key is not present in triggering json
+      json = parse( """{"key2": 10.4}""").asInstanceOf[JObject]
       threshold ! json
       probe.expectNoMsg()
     }
-
   }
 }
