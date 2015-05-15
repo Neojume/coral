@@ -21,7 +21,10 @@ object MemoryActor {
 
 class MemoryActor(json: JObject) extends CoralActor with ActorLogging {
   var memory: JValue = JNull
+
   def jsonDef = json
+  def emit    = emitNothing
+  def timer   = noTimer
   def state   = Map(("data", render(memory)))
 
   def trigger = {
@@ -30,7 +33,4 @@ class MemoryActor(json: JObject) extends CoralActor with ActorLogging {
       OptionT.some(Future.successful({}))
     }
   }
-
-  def emit    = emitNothing
-  def timer   = noTimer
 }

@@ -77,9 +77,9 @@ class KDEActor(json: JObject) extends CoralActor {
     case "epanechnikov" => if (Math.abs(value) <= 1) 0.75 * (1.0 - value * value) else 0.0
   }
 
-  def applyBandwidth(x: Double, value: Double, h: Double): Double = Math.abs((x - value) / h) / h
+  def applyBandwidth(x: Double, value: Double, h: Double): Double = (Math.abs(x - value) / h) / h
 
-  def computeBandwidth(func: Any, values: Array[Double]): Double = bandwidth match {
+  def computeBandwidth(func: Any, values: List[Double]): Double = bandwidth match {
     case "silverman" => {
       val mean = values.sum / values.length
       val devs = values.map(value => (value - mean) * (value - mean))
@@ -91,20 +91,15 @@ class KDEActor(json: JObject) extends CoralActor {
   }
 
   def trigger = {
-    json: JObject =>
-      for {
-        // From trigger data
-        subpath <- getTriggerInputField[String](json \ by)
-        value <- getTriggerInputField[Double](json \ field)
-//        memory <- getCollectInputField[Array[JObject]]("memory", subpath, "data")
-        memory <- getCollectInputField[Double]("memory", subpath, "data")
-      } yield {
-        // compute (local variables & update state)
-//        val values = memory.map(_ \ field).map(_.extract[Double])
-//        val h = computeBandwidth(bandwidth, values);
-//        val computed = values.map(applyBandwidth(_, value, h)).map(applyKernel(kernel, _)).reduce(_ + _)
-        probability = memory
-      }
+    json: JObject => for {
+      // From trigger data
+      value <- getTriggerInputField[Double](json \ field)
+      memory <- getCollectInputField[JValue]("memory", by, "data")
+    } yield {
+      val values: List[Double] = (memory \ "memory" \ "data" \ field).extract[List[Double]]
+      val h = computeBandwidth(bandwidth, values)
+      probability = values.map(applyBandwidth(_, value, h)).map(applyKernel(kernel, _)).reduce(_ + _)
+    }
   }
 
   def emit = {
