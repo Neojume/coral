@@ -16,7 +16,6 @@ class DefaultActorPropFactory extends ActorPropFactory {
       case "kde" => KDEActor(params)
       case "lookup" => LookupActor(params)
       case "memory" => MemoryActor(params)
-      case "memuser" => MemoryUserActor(params)
       case "sample" => SampleActor(params)
       case "stats" => StatsActor(params)
       case "threshold" => ThresholdActor(params)
