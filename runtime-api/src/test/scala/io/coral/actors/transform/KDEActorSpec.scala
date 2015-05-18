@@ -41,8 +41,9 @@ class KDEActorSpec(_system: ActorSystem)
     TestActorRef[MockMemoryActor](Props(new MockMemoryActor(data)))
   }
 
-  val testData = parse("""{"memory": { "data": [ {"val": 1}, {"val": 2.0}, {"val": 1.0}, {"val": 1.2}, {"val": 1.8} ] }}""").asInstanceOf[JObject]
-
+  val tinyData = parse("""{ "data": [ {"val": 1}, {"val": 2.0} ] }""").asInstanceOf[JObject]
+  val smallData = parse("""{ "data": [ {"val": 1}, {"val": 2.0}, {"val": 1.4}, {"val": 1.2}, {"val": 1.8} ] }""").asInstanceOf[JObject]
+0
   def createKDEActorRef: TestActorRef[KDEActor] = {
     val createJson = parse("""{ "type": "kde", "params": { "by": "", "field": "val", "kernel": "gaussian", "bandwidth": "silverman"} }""".stripMargin).asInstanceOf[JObject]
     val props = CoralActorFactory.getProps(createJson).get
@@ -69,17 +70,16 @@ class KDEActorSpec(_system: ActorSystem)
       actor.timer should be(actor.noTimer)
     }
 
-    // this should be better separated, even if only from a unit testing point of view
-    "process trigger and collect data" in {
+    "compute a probability based on the memory actor" in {
       val kdeRef = createKDEActorRef
-      val mockMemory = createMockMemoryRef(testData)
+      val mockMemory = createMockMemoryRef(tinyData)
       val probe = TestProbe()
 
       kdeRef.underlyingActor.collectSources = Map("memory" -> mockMemory.path.toString)
       kdeRef.underlyingActor.emitTargets += probe.ref
 
-      kdeRef ! parse(s"""{"val": 1.6 }""").asInstanceOf[JObject]
-      probe.expectMsg(parse(s"""{"val": 1.6, "probability": 0.2718602889819728}""").asInstanceOf[JObject])
+      kdeRef ! parse(s"""{"val": 1.0 }""").asInstanceOf[JObject]
+      probe.expectMsg(parse(s"""{"val": 1.0, "probability": 0.5287675721190984}""").asInstanceOf[JObject])
     }
   }
 }
