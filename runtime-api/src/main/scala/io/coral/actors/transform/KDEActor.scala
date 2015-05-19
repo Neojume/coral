@@ -2,6 +2,7 @@ package io.coral.actors.transform
 
 import akka.actor.Props
 import io.coral.actors.CoralActor
+import org.json4s.JsonAST.JValue
 import org.json4s._
 import org.json4s.JsonDSL._
 import org.json4s.jackson.JsonMethods._
@@ -65,27 +66,35 @@ class KDEActor(json: JObject) extends CoralActor {
   def jsonDef = json
 
   val (by, field, kernel, bandwidth) = KDEActor.getParams(jsonDef).get
-  var probability: Double = 0.0
+  var log_prob: Double = 0.0
 
   def state = Map.empty
   def timer = noTimer
 
   def applyKernel(kernel: String, value: Double): Double = kernel match {
-    case "gaussian" => 1.0 / Math.sqrt(2 * Math.PI) * Math.pow(Math.E, (- 0.5 * value * value))
-    case "triangular" => if (Math.abs(value) <= 1) (1.0 - Math.abs(value)) else 0.0
+    case "gaussian" => 1.0 / Math.sqrt(2 * Math.PI) * Math.exp(- 0.5 * value * value)
+    case "triangular" => if (Math.abs(value) <= 1) 1.0 - Math.abs(value) else 0.0
     case "uniform" => if (Math.abs(value) <= 1) 0.5 else 0.0
     case "epanechnikov" => if (Math.abs(value) <= 1) 0.75 * (1.0 - value * value) else 0.0
   }
 
-  def applyBandwidth(x: Double, value: Double, h: Double): Double = (Math.abs(x - value) / h) / h
 
   def computeBandwidth(func: Any, values: List[Double]): Double = bandwidth match {
     case "silverman" => {
       val mean = values.sum / values.length
       val devs = values.map(value => (value - mean) * (value - mean))
-      Math.sqrt(devs.sum / values.length)
+      val std = Math.sqrt(devs.sum / values.length)
+      val A = std // TODO: incorporate IQR
+      0.9 * A * Math.pow(values.length, -0.2)
     }
-    case "scott" => 0.0
+    case "scott" => {
+      val mean = values.sum / values.length
+      val devs = values.map(value => (value - mean) * (value - mean))
+      val std = Math.sqrt(devs.sum / values.length)
+      val A = std // TODO: incorporate IQR
+      0.9 * A * Math.pow(values.length, -0.2)
+      1.059 * std * Math.pow(values.length, -0.2)
+    }
     case "sheather-jones" => 0.0
     case _ => bandwidth.asInstanceOf[Double]
   }
@@ -93,18 +102,27 @@ class KDEActor(json: JObject) extends CoralActor {
   def trigger = {
     json: JObject => for {
       // From trigger data
-      value <- getTriggerInputField[Double](json \ field)
+      input <- getTriggerInputField[Double](json \ field)
       memory <- getCollectInputField[JValue]("memory", by, "data")
     } yield {
-      val values: List[Double] = (memory \ "memory" \ "data" \ field).extract[List[Double]]
+
+      // TODO: Find cleaner way to extract list from memory
+      val values: List[Double] = for {
+        JObject(obj) <- (memory \ "data")
+        JField(this.field, value) <- obj
+      } yield value.extract[Double]
+
       val h = computeBandwidth(bandwidth, values)
-      probability = values.map(applyBandwidth(_, value, h)).map(applyKernel(kernel, _)).reduce(_ + _)
+      val weights = for (value <- values) yield {
+        applyKernel(kernel, Math.abs(value - input) / h) / h
+      }
+      log_prob = Math.log(weights.sum) - Math.log(weights.length)
     }
   }
 
   def emit = {
     json: JObject => {
-      val result = ("probability" -> probability)
+      val result = ("probability" -> Math.exp(log_prob))
       render(result) merge json
     }
   }
