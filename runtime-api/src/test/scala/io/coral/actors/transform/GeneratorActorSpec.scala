@@ -63,8 +63,44 @@ class GeneratorActorSpec(_system: ActorSystem) extends TestKit(_system)
       }
     }
 
-    "Handle floating point numbers and non-floating point numbers equally well" in {
+    "Have no trigger" in {
       val definition = parse( """ {
+                "type": "generator",
+                "format": {
+                    "field1": "N(100, 10)",
+                    "field2": "['a', 'b', 'c']",
+                    "field3": "U(100)"
+                }, "timer": {
+                    "rate": 10,
+                    "times": 1,
+                    "delay": 0
+                } } """).asInstanceOf[JObject]
+
+      val props = CoralActorFactory.getProps(definition).get
+      val generator = TestActorRef[GeneratorActor](props).underlyingActor
+      generator.trigger should be(generator.defaultTrigger)
+    }
+
+    "Emit nothing" in {
+      val definition = parse( """ {
+                "type": "generator",
+                "format": {
+                    "field1": "N(100, 10)",
+                    "field2": "['a', 'b', 'c']",
+                    "field3": "U(100)"
+                }, "timer": {
+                    "rate": 10,
+                    "times": 1,
+                    "delay": 0
+                } } """).asInstanceOf[JObject]
+
+      val props = CoralActorFactory.getProps(definition).get
+      val generator = TestActorRef[GeneratorActor](props).underlyingActor
+      generator.emit should be(generator.emitNothing)
+    }
+
+    "Handle floating point numbers and non-floating point numbers equally well" in {
+      val definition = parse(  """ {
                 "type": "generator",
                 "format": {
                     "field1": "N(100.25, 10.53)",

@@ -59,6 +59,24 @@ with BeforeAndAfterAll {
       }
     }
 
+    "Have no state" in {
+      val constructor = parse(
+        """ {"type": "threshold", "params":
+            { "key": "key1", "threshold": 10.5, "triggerWhen": "higher" } } """.stripMargin).asInstanceOf[JObject]
+      val props = ThresholdActor(constructor).get
+      val threshold = TestActorRef[ThresholdActor](props).underlyingActor
+      threshold.state should be(Map.empty)
+    }
+
+    "Have no timer" in {
+      val constructor = parse(
+        """ {"type": "threshold", "params":
+            { "key": "key1", "threshold": 10.5, "triggerWhen": "higher" } } """.stripMargin).asInstanceOf[JObject]
+      val props = ThresholdActor(constructor).get
+      val threshold = TestActorRef[ThresholdActor](props).underlyingActor
+      threshold.timer should be(threshold.noTimer)
+    }
+
     "Properly trigger when set to 'higher'" in {
       val constructor = parse(
         """ {"type": "threshold", "params":

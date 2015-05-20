@@ -18,13 +18,22 @@ object KDEActor {
     for {
     // from json actor definition
     // possible parameters server/client, url, etc
-      by <- (json \ "params" \ "by").extractOpt[String]
+      by <- getBy(json)
       field <- (json \ "params" \ "field").extractOpt[String]
       kernel <- getKernel(json)
       bandwidth <- getBandwidth(json)
     } yield {
       (by, field, kernel, bandwidth)
     }
+  }
+
+  def getBy(json: JValue) = {
+    val by = json \ "params" \ "by"
+    val value = by match {
+      case JString(s) => s
+      case _ => ""
+    }
+    Some(value)
   }
 
   def getKernel(json: JValue) = {

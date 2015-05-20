@@ -43,9 +43,9 @@ class KDEActorSpec(_system: ActorSystem)
 
   val tinyData = parse("""{ "data": [ {"val": 1}, {"val": 2.0} ] }""").asInstanceOf[JObject]
   val smallData = parse("""{ "data": [ {"val": 1}, {"val": 2.0}, {"val": 1.4}, {"val": 1.2}, {"val": 1.8} ] }""").asInstanceOf[JObject]
-0
-  def createKDEActorRef: TestActorRef[KDEActor] = {
-    val createJson = parse("""{ "type": "kde", "params": { "by": "", "field": "val", "kernel": "gaussian", "bandwidth": "silverman"} }""".stripMargin).asInstanceOf[JObject]
+
+  def createKDEActorRef(by: String, field: String, kernel: String, bandwidth: String): TestActorRef[KDEActor] = {
+    val createJson = parse(s"""{ "type": "kde", "params": { "by": "${by}", "field": "${field}", "kernel": "${kernel}", "bandwidth": "${bandwidth}"} }""".stripMargin).asInstanceOf[JObject]
     val props = CoralActorFactory.getProps(createJson).get
     TestActorRef[KDEActor](props)
   }
@@ -53,25 +53,57 @@ class KDEActorSpec(_system: ActorSystem)
   "KDEActor" should {
 
     "obtain correct values from create json" in {
-      val actor = createKDEActorRef.underlyingActor
-      actor.by should be("")
+      val actor = createKDEActorRef("by", "val", "gaussian", "silverman").underlyingActor
+      actor.by should be("by")
       actor.field should be("val")
       actor.kernel should be("gaussian")
       actor.bandwidth should be("silverman")
     }
 
     "have no state" in {
-      val actor = createKDEActorRef.underlyingActor
+      val actor = createKDEActorRef("by", "val", "gaussian", "silverman").underlyingActor
       actor.state should be(Map.empty)
     }
 
     "have no timer action" in {
-      val actor = createKDEActorRef.underlyingActor
+      val actor = createKDEActorRef("by", "val", "gaussian", "silverman").underlyingActor
       actor.timer should be(actor.noTimer)
     }
 
+    "create no actor with invalid kernel" in {
+      intercept[IllegalArgumentException] {
+        val kdeActor = createKDEActorRef("by", "val", "not a kernel", "silverman")
+        kdeActor should be(None)
+      }
+    }
+
+    "create no actor with invalid bandwidth" in {
+      // Invalid string
+      intercept[IllegalArgumentException] {
+        val kdeActor = createKDEActorRef("by", "val", "gaussian", "invalid bandwidth")
+        kdeActor should be(None)
+      }
+
+      // Invalid type
+      intercept[IllegalArgumentException] {
+        val createJson = parse("""{ "type": "kde", "params": { "field": "val", "bandwidth": {"bandwidth": "still invalid"}} }""".stripMargin).asInstanceOf[JObject]
+        val props = CoralActorFactory.getProps(createJson).get
+        val kdeActor = TestActorRef[KDEActor](props).underlyingActor
+        kdeActor should be(None)
+      }
+    }
+
+    "use defaults when no params are provided" in {
+      val createJson = parse("""{ "type": "kde", "params": { "field": "val"} }""".stripMargin).asInstanceOf[JObject]
+      val props = CoralActorFactory.getProps(createJson).get
+      val actor = TestActorRef[KDEActor](props).underlyingActor
+      actor.by should be("")
+      actor.kernel should be("gaussian")
+      actor.bandwidth should be("silverman")
+    }
+
     "compute a probability based on the memory actor" in {
-      val kdeRef = createKDEActorRef
+      val kdeRef = createKDEActorRef("", "val", "gaussian", "silverman")
       val mockMemory = createMockMemoryRef(tinyData)
       val probe = TestProbe()
 
@@ -80,6 +112,18 @@ class KDEActorSpec(_system: ActorSystem)
 
       kdeRef ! parse(s"""{"val": 1.0 }""").asInstanceOf[JObject]
       probe.expectMsg(parse(s"""{"val": 1.0, "probability": 0.5287675721190984}""").asInstanceOf[JObject])
+    }
+
+    "be able to use scotts rule of thumb" in {
+      val kdeRef = createKDEActorRef("", "val", "gaussian", "scott")
+      val mockMemory = createMockMemoryRef(tinyData)
+      val probe = TestProbe()
+
+      kdeRef.underlyingActor.collectSources = Map("memory" -> mockMemory.path.toString)
+      kdeRef.underlyingActor.emitTargets += probe.ref
+
+      kdeRef ! parse(s"""{"val": 1.0 }""").asInstanceOf[JObject]
+      probe.expectMsg(parse(s"""{"val": 1.0, "probability": 0.473872584145238}""").asInstanceOf[JObject])
     }
   }
 }

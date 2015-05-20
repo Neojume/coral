@@ -73,6 +73,17 @@ class WindowActorSpec(_system: ActorSystem) extends TestKit(_system)
       }
     }
 
+    "Do not create a new actor with a object type number parameter" in {
+      val constructor = parse(
+        """{ "type": "window", "params" : { "method":
+          |"count", "number": {}, "sliding": 3 }}""".stripMargin).asInstanceOf[JObject]
+
+      intercept[IllegalArgumentException] {
+        val windowActor = WindowActor(constructor)
+        assert(windowActor == None)
+      }
+    }
+
     "Do not create a new actor with a floating point sliding parameter" in {
       val constructor = parse(
         """{ "type": "window", "params" : { "method":
@@ -82,6 +93,28 @@ class WindowActorSpec(_system: ActorSystem) extends TestKit(_system)
         def windowActor = WindowActor(constructor)
         assert(windowActor == None)
       }
+    }
+
+    "Do not create a new actor with a object type sliding parameter" in {
+      val constructor = parse(
+        """{ "type": "window", "params" : { "method":
+          |"count", "number": 4, "sliding": {} }}""".stripMargin).asInstanceOf[JObject]
+
+      intercept[IllegalArgumentException] {
+        def windowActor = WindowActor(constructor)
+        assert(windowActor == None)
+      }
+    }
+
+    "Have no timer" in {
+      val constructor = parse(
+        """{ "type": "window", "params" : { "method":
+          |"count", "number": 3 }}""".stripMargin).asInstanceOf[JObject]
+
+
+      val props = WindowActor(constructor).get
+      val windowActor = TestActorRef[WindowActor](props).underlyingActor
+      windowActor.timer should be(JNothing)
     }
 
     "Automatically set a sliding window with only number definition" in {
